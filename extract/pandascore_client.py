@@ -82,6 +82,18 @@ class PandaScoreClient:
             params.update(filters)
         return self._request("GET", "/valorant/matches/past", params=params)
 
+    def get_upcoming_matches_page(self, page: int = 1, per_page: int = 50,
+                                   filters: Optional[dict] = None) -> requests.Response:
+        """
+        Fetch one page of upcoming (not yet played) VALORANT matches.
+        Separate endpoint from get_matches_page — PandaScore splits past
+        and upcoming matches into distinct endpoints rather than one
+        endpoint with a status filter.
+        """
+        params = {"page": page, "per_page": per_page}
+        if filters:
+            params.update(filters)
+        return self._request("GET", "/valorant/matches/upcoming", params=params)
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)

@@ -122,3 +122,48 @@ def test_unfinished_matches_are_excluded():
 
     assert len(result) == 1
     assert result.iloc[0]["match_id"] == 1
+
+def test_current_team_stats_include_the_most_recent_match():
+    """Unlike build_match_features (which excludes each match's own
+    outcome), get_current_team_stats is for predicting a match that
+    HASN'T happened yet, so it should include every finished match up
+    to now, including the most recent one."""
+    from features import get_current_team_stats
+
+    matches = pd.DataFrame(
+        [
+            (1, "2025-01-01", 100, "A", 2, 200, "B", 0, 100, 1, "finished"),
+            (2, "2025-01-05", 100, "A", 0, 300, "C", 2, 300, 1, "finished"),
+            (3, "2025-01-10", 100, "A", 2, 200, "B", 1, 100, 1, "finished"),
+        ],
+        columns=MATCH_COLUMNS,
+    )
+    stats = get_current_team_stats(matches)
+
+    team_a_row = stats[stats["team_id"] == 100].iloc[0]
+    assert team_a_row["matches_played"] == 3
+    assert round(team_a_row["rolling_winrate"], 4) == round(2 / 3, 4)
+    assert str(team_a_row["last_match_date"].date()) == "2025-01-10"
+
+
+def test_h2h_winrate_uses_all_prior_meetings():
+    from features import get_h2h_winrate
+
+    matches = pd.DataFrame(
+        [
+            (1, "2025-01-01", 100, "A", 2, 200, "B", 0, 100, 1, "finished"),
+            (2, "2025-01-10", 100, "A", 2, 200, "B", 1, 100, 1, "finished"),
+        ],
+        columns=MATCH_COLUMNS,
+    )
+    assert get_h2h_winrate(100, 200, matches) == 1.0
+
+
+def test_h2h_winrate_is_nan_when_teams_never_met():
+    from features import get_h2h_winrate
+
+    matches = pd.DataFrame(
+        [(1, "2025-01-01", 100, "A", 2, 200, "B", 0, 100, 1, "finished")],
+        columns=MATCH_COLUMNS,
+    )
+    assert pd.isna(get_h2h_winrate(100, 999, matches))

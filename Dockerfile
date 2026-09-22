@@ -10,4 +10,7 @@ USER airflow
 
 RUN pip install --no-cache-dir \
     "dbt-core==1.8.2" \
-    "dbt-postgres==1.8.2"
+    "dbt-postgres==1.8.2" \
+    "pandas==2.2.2" \
+    "scikit-learn==1.5.1" \
+    "joblib==1.4.2"

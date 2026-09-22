@@ -21,13 +21,17 @@ Two things this script does carefully, and why:
    on the most recent ones — is the only split that honestly simulates
    real deployment.
 """
+import os
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix, roc_auc_score
+from joblib import dump
 
 RANDOM_SEED = 42
+
+MODEL_PATH = os.path.join(os.path.dirname(__file__), "model.joblib")
 
 FEATURE_COLUMNS = [
     "team_a_rolling_winrate", "team_b_rolling_winrate",
@@ -130,6 +134,12 @@ def main():
             print("Feature coefficients (higher = pushes toward team_a winning):")
             for feat, coef in sorted(zip(FEATURE_COLUMNS, model.coef_[0]), key=lambda x: -abs(x[1])):
                 print(f"  {feat}: {coef:+.3f}")
+
+            # Saved for predict_upcoming.py. Logistic Regression is saved
+            # (not Random Forest) because it's the model that actually beat
+            # the baseline on real data — see analysis/README.md for why.
+            dump({"model": model, "feature_columns": FEATURE_COLUMNS}, MODEL_PATH)
+            print("\nSaved trained model to analysis/model.joblib")
         else:
             print("Feature importances:")
             for feat, imp in sorted(zip(FEATURE_COLUMNS, model.feature_importances_), key=lambda x: -x[1]):

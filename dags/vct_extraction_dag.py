@@ -24,6 +24,15 @@ sys.path.insert(0, "/opt/airflow/load")
 
 DBT_PROJECT_DIR = "/opt/airflow/transform/vct_dbt"
 
+def run_load(**context):
+    import load_matches
+
+    conn = BaseHook.get_connection("vct_warehouse")
+    conn_uri = conn.get_uri()
+
+    load_matches.load_all_raw_matches(conn_uri=conn_uri)
+
+    context["ti"].xcom_push(key="load_completed_at", value=datetime.utcnow().isoformat())
 
 def run_extraction(**context):
     from pandascore_client import PandaScoreClient
@@ -43,16 +52,38 @@ def run_extraction(**context):
     context["ti"].xcom_push(key="run_completed_at", value=datetime.utcnow().isoformat())
 
 
-def run_load(**context):
-    import load_matches
+def run_extraction_upcoming(**context):
+    from pandascore_client import PandaScoreClient
+    import extract_upcoming_matches
+
+    conn = BaseHook.get_connection("pandascore_api")
+    api_key = conn.password
+
+    original_client_cls = extract_upcoming_matches.PandaScoreClient
+    extract_upcoming_matches.PandaScoreClient = lambda: PandaScoreClient(api_key=api_key)
+
+    try:
+        extract_upcoming_matches.extract_upcoming_matches()
+    finally:
+        extract_upcoming_matches.PandaScoreClient = original_client_cls
+
+
+def run_prediction(**context):
+    sys.path.insert(0, "/opt/airflow/analysis")
+    from sqlalchemy import create_engine
+    import predict_upcoming
 
     conn = BaseHook.get_connection("vct_warehouse")
     conn_uri = conn.get_uri()
+    # SQLAlchemy needs the explicit psycopg2 dialect in the URL scheme;
+    # Airflow connection URIs don't include it.
+    if conn_uri.startswith("postgresql://"):
+        conn_uri = conn_uri.replace("postgresql://", "postgresql+psycopg2://", 1)
+    elif conn_uri.startswith("postgres://"):
+        conn_uri = conn_uri.replace("postgres://", "postgresql+psycopg2://", 1)
 
-    load_matches.load_all_raw_matches(conn_uri=conn_uri)
-
-    context["ti"].xcom_push(key="load_completed_at", value=datetime.utcnow().isoformat())
-
+    engine = create_engine(conn_uri)
+    predict_upcoming.main(engine=engine)
 
 def log_summary(**context):
     extracted_at = context["ti"].xcom_pull(key="run_completed_at", task_ids="run_extraction")
@@ -76,6 +107,11 @@ with DAG(
         python_callable=run_extraction,
     )
 
+    extract_upcoming_task = PythonOperator(
+        task_id="run_extraction_upcoming",
+        python_callable=run_extraction_upcoming,
+    )
+
     load_task = PythonOperator(
         task_id="run_load",
         python_callable=run_load,
@@ -91,9 +127,14 @@ with DAG(
         bash_command=f"cd {DBT_PROJECT_DIR} && dbt test",
     )
 
+    predict_task = PythonOperator(
+        task_id="run_prediction",
+        python_callable=run_prediction,
+    )
+
     summary_task = PythonOperator(
         task_id="log_summary",
         python_callable=log_summary,
     )
 
-    extract_task >> load_task >> dbt_run_task >> dbt_test_task >> summary_task
+    [extract_task, extract_upcoming_task] >> load_task >> dbt_run_task >> dbt_test_task >> predict_task >> summary_task

@@ -59,6 +59,7 @@ services:
       - ./load:/opt/airflow/load
       - ./data:/opt/airflow/data
       - ./transform:/opt/airflow/transform
+      - ./analysis:/opt/airflow/analysis
 
 
   airflow-webserver:
@@ -88,6 +89,7 @@ services:
       - ./load:/opt/airflow/load
       - ./data:/opt/airflow/data
       - ./transform:/opt/airflow/transform
+      - ./analysis:/opt/airflow/analysis
     command: webserver
 
 
@@ -116,6 +118,7 @@ services:
       - ./load:/opt/airflow/load
       - ./data:/opt/airflow/data
       - ./transform:/opt/airflow/transform
+      - ./analysis:/opt/airflow/analysis
     command: scheduler
 
 

@@ -145,3 +145,49 @@ def build_match_features(matches: pd.DataFrame) -> pd.DataFrame:
     features["team_a_won"] = (features["winner_id"] == features["team_a_id"]).astype(int)
 
     return features
+
+def get_current_team_stats(finished_matches: pd.DataFrame) -> pd.DataFrame:
+    """
+    For predicting an UPCOMING match (not for building historical training
+    data). Returns each team's stats as of right now — their rolling win
+    rate over their last (up to) 5 finished matches, total matches played,
+    and the date of their most recent match.
+
+    This is intentionally different from build_match_features: that
+    function excludes each match's own outcome via .shift(1), because it's
+    building features for matches that already happened. Here there is no
+    "current match" to exclude — we want each team's full known history
+    up to today, to predict a match that hasn't been played yet.
+    """
+    finished_matches = finished_matches[finished_matches["match_status"] == "finished"].copy()
+    finished_matches["end_at"] = pd.to_datetime(finished_matches["end_at"])
+
+    history = _build_team_match_history(finished_matches).sort_values(["team_id", "end_at"])
+    grouped = history.groupby("team_id")
+
+    stats = grouped.agg(
+        matches_played=("won", "count"),
+        last_match_date=("end_at", "max"),
+    ).reset_index()
+
+    rolling = grouped["won"].apply(lambda s: s.tail(ROLLING_WINDOW).mean())
+    rolling = rolling.reset_index(name="rolling_winrate")
+
+    return stats.merge(rolling, on="team_id")
+
+
+def get_h2h_winrate(team_a_id, team_b_id, finished_matches: pd.DataFrame) -> float:
+    """
+    team_a_id's historical win rate against team_b_id, across every
+    finished meeting between them to date. Returns NaN if they have never
+    played each other — an honest "unknown," not a misleading 0 or 0.5.
+    """
+    finished_matches = finished_matches[finished_matches["match_status"] == "finished"]
+    is_this_pair = (
+        ((finished_matches["team_a_id"] == team_a_id) & (finished_matches["team_b_id"] == team_b_id))
+        | ((finished_matches["team_a_id"] == team_b_id) & (finished_matches["team_b_id"] == team_a_id))
+    )
+    meetings = finished_matches[is_this_pair]
+    if len(meetings) == 0:
+        return float("nan")
+    return (meetings["winner_id"] == team_a_id).sum() / len(meetings)
